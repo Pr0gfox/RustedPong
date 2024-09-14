@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use ggez::{Context, ContextBuilder, GameResult};
 use ggez::graphics::{self, Canvas, Color, DrawMode, Mesh, Rect};
 use ggez::event::{self, EventHandler};
@@ -51,6 +53,11 @@ enum Side {
     Right,
 }
 
+enum Orientation {
+    Vertical,
+    Horizontal,
+}
+
 trait Entity {
     fn get_pos(&self) -> Vec2;
     fn get_size(&self) -> Vec2;
@@ -94,7 +101,7 @@ impl dyn Entity {
         canvas.draw(&rectangle, self.get_pos());
 
         // DEBUG
-        let center = Mesh::new_circle(ctx, DrawMode::fill(), Vec2 {x: 0.0, y: 0.0}, 5.0, 1.0, Color::RED)?;
+        let center = Mesh::new_circle(ctx, DrawMode::fill(), Vec2 {x: 0.0, y: 0.0}, 3.0, 1.0, Color::RED)?;
         canvas.draw(&center, self.get_pos());
         // DEBUG END
 
@@ -149,6 +156,10 @@ impl Player {
         Ok(())
     }
 
+    fn check_collision(&self, other: &dyn Entity) -> bool {
+        (self as &dyn Entity).check_collision(other)
+    }
+
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
         (self as &dyn Entity).draw(ctx, canvas)
     }
@@ -169,39 +180,55 @@ impl Entity for Player {
 struct Ball {
     pos: Vec2,
     vel: Vec2,
-    size: f32,
+    size: Vec2,
 }
 
 impl Ball {
     fn new() -> Self {
         Ball {
             pos: Vec2{ x: 300.0, y: 300.0 },
-            vel: Vec2{ x: 1.0, y: 0.0 },
-            size: 7.0,
+            vel: Vec2{ x: 3.0, y: 2.0 },
+            size: Vec2{ x: 10.0, y: 10.0 },
         }
     }
     
     fn update(&mut self) -> GameResult {
+        // Update position based on speed
         self.pos += self.vel;
+        
+        // TODO: Check for collisions
+        if self.pos.x < 10.0 || self.pos.x > 500.0 {
+            self.bounce(&Orientation::Vertical)?;
+        }
+
+        Ok(())
+    }
+
+    fn check_collision(&self, other: &dyn Entity) -> bool {
+        (self as &dyn Entity).check_collision(other)
+    }
+
+    fn bounce(&mut self, surface_orientation: &Orientation) -> GameResult {
+        match surface_orientation {
+            Orientation::Horizontal => self.vel.y *= -1.0,
+            Orientation::Vertical   => self.vel.x *= -1.05,
+        }
         
         Ok(())
     }
 
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-        // Create circle
-        let circle = Mesh::new_circle(
-            ctx, 
-            DrawMode::fill(), 
-            Vec2 {x: 0.0, y: 0.0}, 
-            self.size, 
-            1.0, 
-            COL_BALL
-        )?;
+        (self as &dyn Entity).draw(ctx, canvas)
+    }
+}
 
-        // Draw circle
-        canvas.draw(&circle, self.pos);
+impl Entity for Ball {
+    fn get_pos(&self) -> Vec2 {
+        self.pos
+    }
 
-        Ok(())
+    fn get_size(&self) -> Vec2 {
+        self.size
     }
 }
 // --------------------- BALL ---------------------
@@ -219,7 +246,7 @@ impl MyGame {
             players: vec![
                 Player::new(&Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
                 Player::new(&Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
-                ],
+            ],
             ball: Ball::new(),
         }
     }
@@ -231,10 +258,17 @@ impl EventHandler for MyGame {
         for player in &mut self.players {
             player.update(ctx)?;
         }
-
+        
         // Update ball position
         self.ball.update()?;
-
+        
+        // Check for hit
+        for player in &mut self.players {
+            if self.ball.check_collision(player) {
+                self.ball.bounce(&Orientation::Vertical)?;
+            }
+        }
+        
         // Update score
         
         Ok(())
@@ -245,7 +279,7 @@ impl EventHandler for MyGame {
         let mut canvas = graphics::Canvas::from_frame(ctx, COL_BACKGROUND);
 
         // Draw players
-        for player in &mut self.players {
+        for player in &self.players {
             player.draw(ctx, &mut canvas)?;
         }
 
