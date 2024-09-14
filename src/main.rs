@@ -51,6 +51,57 @@ enum Side {
     Right,
 }
 
+trait Entity {
+    fn get_pos(&self) -> Vec2;
+    fn get_size(&self) -> Vec2;
+}
+
+impl dyn Entity {
+    fn check_collision(&self, other: &dyn Entity) -> bool {
+        // Get the top left and bottom right corners of the rectangles
+        let a_top_l = self.get_pos()  - self.get_size()  / 2.0;
+        let a_bot_r = self.get_pos()  + self.get_size()  / 2.0;
+        let b_top_l = other.get_pos() - other.get_size() / 2.0;
+        let b_bot_r = other.get_pos() + other.get_size() / 2.0;
+
+        // Easy to calculate tha case of NOT colliding in case of rectangles
+        if a_top_l.x > b_bot_r.x || a_top_l.y > b_bot_r.y ||
+            b_top_l.x > a_bot_r.x || b_top_l.y > a_bot_r.y {
+            false
+        }
+        else {
+            true
+        }
+    }
+
+    /// Generic draw function for rectangle shaped entities
+    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
+        // Create rectangle
+        let size = self.get_size();
+        let rectangle = Mesh::new_rectangle(
+            ctx, 
+            DrawMode::fill(),
+            Rect::new(
+                -size.x / 2.0, 
+                -size.y / 2.0, 
+                size.x, 
+                size.y
+            ),
+            COL_FOREGROUND
+        )?;
+
+        // Draw rectangle
+        canvas.draw(&rectangle, self.get_pos());
+
+        // DEBUG
+        let center = Mesh::new_circle(ctx, DrawMode::fill(), Vec2 {x: 0.0, y: 0.0}, 5.0, 1.0, Color::RED)?;
+        canvas.draw(&center, self.get_pos());
+        // DEBUG END
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 struct Controls {
     up: KeyCode,
@@ -99,29 +150,17 @@ impl Player {
     }
 
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
+        (self as &dyn Entity).draw(ctx, canvas)
+    }
+}
 
-        // Create rectangle
-        let rectangle = Mesh::new_rectangle(
-            ctx, 
-            DrawMode::fill(),
-            Rect::new(
-                -self.size.x / 2.0, 
-                -self.size.y / 2.0, 
-                self.size.x, 
-                self.size.y
-            ),
-            COL_FOREGROUND
-        )?;
+impl Entity for Player {
+    fn get_pos(&self) -> Vec2 {
+        self.pos
+    }
 
-        // DEBUG
-        let center = Mesh::new_circle(ctx, DrawMode::fill(), Vec2 {x: 0.0, y: 0.0}, 5.0, 1.0, Color::RED)?;
-        canvas.draw(&center, self.pos);
-        // DEBUG END
-
-        // Draw rectangle
-        canvas.draw(&rectangle, self.pos);
-
-        Ok(())
+    fn get_size(&self) -> Vec2 {
+        self.size
     }
 }
 // --------------------- PLAYER ---------------------
@@ -141,10 +180,10 @@ impl Ball {
             size: 7.0,
         }
     }
-
+    
     fn update(&mut self) -> GameResult {
         self.pos += self.vel;
-
+        
         Ok(())
     }
 
