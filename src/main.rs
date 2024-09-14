@@ -176,6 +176,29 @@ impl Entity for Player {
 }
 // --------------------- PLAYER ---------------------
 
+// ===================== WALL =====================
+struct Wall {
+    pos: Vec2,
+    size: Vec2,
+}
+
+impl Wall {
+    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
+        (self as &dyn Entity).draw(ctx, canvas)
+    }
+}
+
+impl Entity for Wall {
+    fn get_pos(&self) -> Vec2 {
+        self.pos
+    }
+
+    fn get_size(&self) -> Vec2 {
+        self.size
+    }
+}
+// --------------------- WALL ---------------------
+
 // ===================== BALL =====================
 struct Ball {
     pos: Vec2,
@@ -236,6 +259,7 @@ impl Entity for Ball {
 // ===================== GAME =====================
 struct MyGame {
     players: Vec<Player>,
+    walls: Vec<Wall>,
     ball: Ball,
 }
 
@@ -247,6 +271,16 @@ impl MyGame {
                 Player::new(&Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
                 Player::new(&Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
             ],
+            walls: vec![
+                Wall {
+                    pos: Vec2 { x: 400.0, y: 20.0 },
+                    size: Vec2 { x: 800.0, y: 40.0 },
+                },
+                Wall {
+                    pos: Vec2 { x: 400.0, y: 600.0 },
+                    size: Vec2 { x: 800.0, y: 40.0 },
+                },
+            ],
             ball: Ball::new(),
         }
     }
@@ -256,7 +290,15 @@ impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         // Update player position
         for player in &mut self.players {
+let prev_pos = player.pos;
             player.update(ctx)?;
+
+            // Check for wall collision
+            for wall in &self.walls {
+                if player.check_collision(wall) {
+                    player.pos = prev_pos;
+                }
+            }
         }
         
         // Update ball position
@@ -269,7 +311,14 @@ impl EventHandler for MyGame {
             }
         }
         
-        // Update score
+        // Check for wall bounce
+        for wall in &mut self.walls {
+            if self.ball.check_collision(wall) {
+                self.ball.bounce(&Orientation::Horizontal)?;
+            }
+        }
+
+        // Check for score
         
         Ok(())
     }
@@ -277,6 +326,11 @@ impl EventHandler for MyGame {
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         // Create canvas to draw on
         let mut canvas = graphics::Canvas::from_frame(ctx, COL_BACKGROUND);
+
+        // Draw map
+        for wall in &self.walls {
+            wall.draw(ctx, &mut canvas)?;
+        }
 
         // Draw players
         for player in &self.players {
