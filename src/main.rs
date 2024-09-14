@@ -2,6 +2,7 @@ use ggez::{Context, ContextBuilder, GameResult};
 use ggez::graphics::{self, Canvas, Color, DrawMode, Mesh, Rect};
 use ggez::event::{self, EventHandler};
 use ggez::glam::Vec2;
+use ggez::input::keyboard::*;
 
 // ===================== COLORS =====================
 pub const COL_BACKGROUND: Color = Color {
@@ -50,14 +51,22 @@ enum Side {
     Right,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct Controls {
+    up: KeyCode,
+    down: KeyCode,
+}
+
 struct Player {
     side: Side,
     pos: Vec2,
     size: Vec2,
+    controls: Controls,
+    speed: f32,
 }
 
 impl Player {
-    fn new(side: &Side) -> Self {
+    fn new(side: &Side, controls: &Controls) -> Self {
         Player {
             side: *side,
             pos: Vec2 {
@@ -72,7 +81,21 @@ impl Player {
                 x: 20.0,
                 y: 200.0
             },
+            controls: *controls,
+            speed: 7.0,
         }
+    }
+
+    fn update(&mut self, ctx: &mut Context) -> GameResult {
+
+        if ctx.keyboard.is_key_pressed(self.controls.up) {
+            self.pos.y -= self.speed;
+        }
+        if ctx.keyboard.is_key_pressed(self.controls.down) {
+            self.pos.y += self.speed;
+        }
+
+        Ok(())
     }
 
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
@@ -154,15 +177,21 @@ impl MyGame {
     pub fn new(_ctx: &mut Context) -> MyGame {
         // Load/create resources such as images here.
         MyGame {
-            players: vec![Player::new(&Side::Left), Player::new(&Side::Right)],
+            players: vec![
+                Player::new(&Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
+                Player::new(&Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
+                ],
             ball: Ball::new(),
         }
     }
 }
 
 impl EventHandler for MyGame {
-    fn update(&mut self, _ctx: &mut Context) -> GameResult {
+    fn update(&mut self, ctx: &mut Context) -> GameResult {
         // Update player position
+        for player in &mut self.players {
+            player.update(ctx)?;
+        }
 
         // Update ball position
         self.ball.update()?;
