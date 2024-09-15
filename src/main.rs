@@ -82,9 +82,28 @@ enum Orientation {
 }
 
 trait Entity {
+    fn update(&mut self, ctx: &mut Context) -> () {
+        self.lower_excitement();
+    }
+
+    fn trig_excited(&mut self) -> () {
+        *self.get_excitement_ref() = 0.7;
+    }
+
+    fn lower_excitement(&mut self) -> () {
+        let excitement = self.get_excitement_ref();
+        if *excitement > 0. {
+            *excitement -= 0.03;
+        } else {
+            *excitement = 0.;
+        }
+    }
+
     fn get_pos(&self) -> Vec2;
     fn get_size(&self) -> Vec2;
     fn get_color(&self) -> Color;
+    fn get_excitement(&self) -> f32;
+    fn get_excitement_ref(&mut self) -> &mut f32;
 }
 
 impl dyn Entity {
@@ -109,8 +128,10 @@ impl dyn Entity {
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
         // Create rectangle
         let size = self.get_size();
+        let excitement = self.get_excitement();
+        let color_stroke = lerp_color(&self.get_color(), &Color::WHITE, excitement);
         let mut color_fill = self.get_color();
-        color_fill.a *= 0.5;
+        color_fill.a *= 0.5 + excitement;
 
         let rectangle_fill = Mesh::new_rectangle(
             ctx, 
@@ -132,7 +153,7 @@ impl dyn Entity {
                 size.x, 
                 size.y
             ),
-            self.get_color(),
+            color_stroke,
         )?;
 
         // Draw rectangle
@@ -160,7 +181,8 @@ struct Player {
     speed: f32,
     curve_strength: f32,
     straight_strength: f32,
-    color: Color
+    color: Color,
+    excitement: f32,
 }
 
 impl Player {
@@ -186,27 +208,16 @@ impl Player {
             color: match side {
                 Side::Left  => COL_LEFT,
                 Side::Right => COL_RIGHT,
-            }
+            },
+            excitement: 0.,
         }
-    }
-
-    fn update(&mut self, ctx: &mut Context) -> GameResult {
-
-        if ctx.keyboard.is_key_pressed(self.controls.up) {
-            self.pos.y -= self.speed;
-        }
-        if ctx.keyboard.is_key_pressed(self.controls.down) {
-            self.pos.y += self.speed;
-        }
-
-        Ok(())
     }
 
     fn check_collision(&self, other: &dyn Entity) -> bool {
         (self as &dyn Entity).check_collision(other)
     }
 
-    fn hit(&self, ball: &mut Ball) -> GameResult {
+    fn hit(&mut self, ball: &mut Ball) -> GameResult {
         // Ball bounce (overwrite x position to avoid getting stuck)
         ball.bounce(&Orientation::Vertical)?;
         ball.pos.x = self.pos.x + match self.side {
@@ -221,11 +232,10 @@ impl Player {
         // Add extra strength near center hit
         ball.vel.x *= 1. + (1. - rel_diff.abs()) * self.straight_strength;
 
-        Ok(())
-    }
+        // Get excited
+        (self as &mut dyn Entity).trig_excited();
 
-    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-        (self as &dyn Entity).draw(ctx, canvas)
+        Ok(())
     }
 }
 
@@ -241,6 +251,26 @@ impl Entity for Player {
     fn get_color(&self) -> Color {
         self.color
     }
+
+    fn get_excitement(&self) -> f32 {
+        self.excitement
+    }
+
+    fn get_excitement_ref(&mut self) -> &mut f32 {
+        &mut self.excitement
+    }
+
+    fn update(&mut self, ctx: &mut Context) -> () {
+
+        if ctx.keyboard.is_key_pressed(self.controls.up) {
+            self.pos.y -= self.speed;
+        }
+        if ctx.keyboard.is_key_pressed(self.controls.down) {
+            self.pos.y += self.speed;
+        }
+
+        (self as &mut dyn Entity).lower_excitement();
+    }
 }
 // --------------------- PLAYER ---------------------
 
@@ -249,12 +279,7 @@ struct Wall {
     pos: Vec2,
     size: Vec2,
     color: Color,
-}
-
-impl Wall {
-    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-        (self as &dyn Entity).draw(ctx, canvas)
-    }
+    excitement: f32,
 }
 
 impl Entity for Wall {
@@ -269,6 +294,14 @@ impl Entity for Wall {
     fn get_color(&self) -> Color {
         self.color
     }
+
+    fn get_excitement(&self) -> f32 {
+        self.excitement
+    }
+
+    fn get_excitement_ref(&mut self) -> &mut f32 {
+        &mut self.excitement
+    }
 }
 // --------------------- WALL ---------------------
 
@@ -278,12 +311,7 @@ struct Goal {
     size: Vec2,
     side: Side,
     color: Color,
-}
-
-impl Goal {
-    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-        (self as &dyn Entity).draw(ctx, canvas)
-    }
+    excitement: f32,
 }
 
 impl Entity for Goal {
@@ -298,6 +326,14 @@ impl Entity for Goal {
     fn get_color(&self) -> Color {
         self.color
     }
+
+    fn get_excitement(&self) -> f32 {
+        self.excitement
+    }
+
+    fn get_excitement_ref(&mut self) -> &mut f32 {
+        &mut self.excitement
+    }
 }
 // --------------------- GOAL ---------------------
 
@@ -309,7 +345,8 @@ struct Ball {
     size: Vec2,
     bounciness: f32,
     x_speed_limit: f32,
-    color: Color
+    color: Color,
+    excitement: f32,
 }
 
 impl Ball {
@@ -322,20 +359,13 @@ impl Ball {
             bounciness: 0.9,
             x_speed_limit: 8.,
             color: Color::WHITE,
+            excitement: 0.,
         }
     }
 
     fn reset(&mut self, ctx: &mut Context) -> () {
         self.pos = Vec2{ x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 / 2. };
         self.vel = Vec2{ x: 3.0, y: 2.0 };
-    }
-    
-    fn update(&mut self) -> GameResult {
-        // Update position based on speed
-        self.prev_pos = self.pos;
-        self.pos += self.vel;
-
-        Ok(())
     }
 
     fn check_collision(&self, other: &dyn Entity) -> bool {
@@ -361,12 +391,11 @@ impl Ball {
         } else if self.vel.x < -self.x_speed_limit {
             self.vel.x = -self.x_speed_limit;
         }
+
+        // Get excited
+        (self as &mut dyn Entity).trig_excited();
         
         Ok(())
-    }
-
-    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-        (self as &dyn Entity).draw(ctx, canvas)
     }
 }
 
@@ -381,6 +410,22 @@ impl Entity for Ball {
 
     fn get_color(&self) -> Color {
         self.color
+    }
+
+    fn get_excitement(&self) -> f32 {
+        self.excitement
+    }
+
+    fn get_excitement_ref(&mut self) -> &mut f32 {
+        &mut self.excitement
+    }
+
+    fn update(&mut self, ctx: &mut Context) -> () {
+        // Update position based on speed
+        self.prev_pos = self.pos;
+        self.pos += self.vel;
+
+        (self as &mut dyn Entity).lower_excitement();
     }
 }
 // --------------------- BALL ---------------------
@@ -460,11 +505,13 @@ impl MyGame {
                     pos: Vec2 { x: ctx.gfx.drawable_size().0 / 2., y: 0. },
                     size: Vec2 { x: ctx.gfx.drawable_size().0, y: 80.0 },
                     color: COL_FOREGROUND,
+                    excitement: 0.,
                 },
                 Wall {
                     pos: Vec2 { x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 },
                     size: Vec2 { x: ctx.gfx.drawable_size().0, y: 80.0 },
                     color: COL_FOREGROUND,
+                    excitement: 0.,
                 },
                 ],
                 goals: vec![
@@ -473,12 +520,14 @@ impl MyGame {
                     size: Vec2 { x: 130.0, y: ctx.gfx.drawable_size().1 - 80. },
                     side: Side::Right,
                     color: lerp_color(&COL_LEFT, &COL_BACKGROUND, 0.5),
+                    excitement: 0.,
                 },
                 Goal {
                     pos: Vec2 { x: ctx.gfx.drawable_size().0, y: ctx.gfx.drawable_size().1 / 2. },
                     size: Vec2 { x: 130.0, y: ctx.gfx.drawable_size().1 - 80. },
                     side: Side::Left,
                     color: lerp_color(&COL_RIGHT, &COL_BACKGROUND, 0.5),
+                    excitement: 0.,
                 },
             ],
             ball: Ball::new(ctx),
@@ -489,21 +538,41 @@ impl MyGame {
 
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
-        // Update player position
-        for player in &mut self.players {
-            let prev_pos = player.pos;
-            player.update(ctx)?;
 
-            // Check for wall collision
+        // Collect all entities into a vector
+        // TODO: This piece of code is a copy-paste available in draw() and update()
+        // It would be nite to have this list when constructing MyGame
+        let mut entity_refs: Vec<&mut dyn Entity> = Vec::new();
+        for goal in &mut self.goals {
+            entity_refs.push(goal as &mut dyn Entity);
+        }
+        for wall in &mut self.walls {
+            entity_refs.push(wall as &mut dyn Entity);
+        }
+        for player in &mut self.players {
+            entity_refs.push(player as &mut dyn Entity);
+        }
+        entity_refs.push(&mut self.ball as &mut dyn Entity);
+
+        // Call update for each entity
+        for entity_ref in entity_refs
+        {
+            entity_ref.update(ctx);
+        }
+
+        // Update player position (check for walls)
+        for player in &mut self.players {
             for wall in &self.walls {
                 if player.check_collision(wall) {
-                    player.pos = prev_pos;
+                    let wall_offset = ( wall.size.y + player.size.y ) / 2.;
+                    player.pos.y = if player.pos.y < wall.pos.y {
+                        wall.pos.y - wall_offset
+                    } else {
+                        wall.pos.y + wall_offset
+                    };
                 }
             }
         }
-        
-        // Update ball position
-        self.ball.update()?;
         
         // Check for hit
         for player in &mut self.players {
@@ -523,6 +592,7 @@ impl EventHandler for MyGame {
         for goal in &mut self.goals {
             if self.ball.check_collision(goal) {
                 self.score.increment(&goal.side);
+                (goal as &mut dyn Entity).trig_excited();
                 self.ball.reset(ctx);
             }
         }
@@ -534,24 +604,29 @@ impl EventHandler for MyGame {
         // Create canvas to draw on
         let mut canvas = graphics::Canvas::from_frame(ctx, COL_BACKGROUND);
 
-        // Draw map
-        for goal in &self.goals {
-            goal.draw(ctx, &mut canvas)?;
+        // Collect all entities into a vector
+        // TODO: This piece of code is a copy-paste available in draw() and update()
+        // It would be nite to have this list when constructing MyGame
+        let mut entity_refs: Vec<&mut dyn Entity> = Vec::new();
+        for goal in &mut self.goals {
+            entity_refs.push(goal as &mut dyn Entity);
         }
-        for wall in &self.walls {
-            wall.draw(ctx, &mut canvas)?;
+        for wall in &mut self.walls {
+            entity_refs.push(wall as &mut dyn Entity);
         }
-
+        for player in &mut self.players {
+            entity_refs.push(player as &mut dyn Entity);
+        }
+        entity_refs.push(&mut self.ball as &mut dyn Entity);
+        
         // Draw score
         self.score.draw(ctx, &mut canvas)?;
 
-        // Draw players
-        for player in &self.players {
-            player.draw(ctx, &mut canvas)?;
+        // Call the draw function for each entity
+        for entity_ref in entity_refs
+        {
+            entity_ref.draw(ctx, &mut canvas)?;
         }
-
-        // Draw ball
-        self.ball.draw(ctx, &mut canvas)?;
 
         // End draw
         canvas.finish(ctx)
