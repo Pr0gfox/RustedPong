@@ -158,6 +158,8 @@ struct Player {
     size: Vec2,
     controls: Controls,
     speed: f32,
+    curve_strength: f32,
+    straight_strength: f32,
     color: Color
 }
 
@@ -179,6 +181,8 @@ impl Player {
             },
             controls: *controls,
             speed: 7.0,
+            curve_strength: 1.7,
+            straight_strength: 1.05,
             color: match side {
                 Side::Left  => COL_LEFT,
                 Side::Right => COL_RIGHT,
@@ -200,6 +204,24 @@ impl Player {
 
     fn check_collision(&self, other: &dyn Entity) -> bool {
         (self as &dyn Entity).check_collision(other)
+    }
+
+    fn hit(&self, ball: &mut Ball) -> GameResult {
+        // Ball bounce (overwrite x position to avoid getting stuck)
+        ball.bounce(&Orientation::Vertical)?;
+        ball.pos.x = self.pos.x + match self.side {
+            Side::Left  =>  (self.size.x + ball.size.x) / 2.,
+            Side::Right => -(self.size.x + ball.size.x) / 2.,
+        };
+        
+        // Add curve based on relative position
+        let rel_diff = (ball.pos.y - self.pos.y) / (self.size.y / 2. + ball.size.y / 2.);
+        ball.vel.y = ball.vel.x.abs() * rel_diff * self.curve_strength;
+        
+        // Add extra strength near center hit
+        ball.vel.x *= 1. + (1. - rel_diff.abs()) * self.straight_strength;
+
+        Ok(())
     }
 
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
@@ -282,8 +304,11 @@ impl Entity for Goal {
 // ===================== BALL =====================
 struct Ball {
     pos: Vec2,
+    prev_pos: Vec2,
     vel: Vec2,
     size: Vec2,
+    bounciness: f32,
+    x_speed_limit: f32,
     color: Color
 }
 
@@ -291,8 +316,11 @@ impl Ball {
     fn new(ctx: &mut Context) -> Self {
         Ball {
             pos: Vec2{ x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 / 2. },
+            prev_pos: Vec2::ZERO,
             vel: Vec2{ x: 3.0, y: 2.0 },
             size: Vec2{ x: 10.0, y: 10.0 },
+            bounciness: 0.9,
+            x_speed_limit: 8.,
             color: Color::WHITE,
         }
     }
@@ -304,6 +332,7 @@ impl Ball {
     
     fn update(&mut self) -> GameResult {
         // Update position based on speed
+        self.prev_pos = self.pos;
         self.pos += self.vel;
 
         Ok(())
@@ -314,9 +343,23 @@ impl Ball {
     }
 
     fn bounce(&mut self, surface_orientation: &Orientation) -> GameResult {
+        // Bounce depending on surface orientation
         match surface_orientation {
-            Orientation::Horizontal => self.vel.y *= -1.0,
-            Orientation::Vertical   => self.vel.x *= -1.05,
+            Orientation::Horizontal => {
+                self.pos.y = self.prev_pos.y;
+                self.vel.y *= -self.bounciness;
+            },
+            Orientation::Vertical   => {
+                self.pos.x = self.prev_pos.x;
+                self.vel.x *= -self.bounciness;
+            }
+        }
+
+        // Limit X speed
+        if self.vel.x > self.x_speed_limit {
+            self.vel.x = self.x_speed_limit;
+        } else if self.vel.x < -self.x_speed_limit {
+            self.vel.x = -self.x_speed_limit;
         }
         
         Ok(())
@@ -465,7 +508,7 @@ impl EventHandler for MyGame {
         // Check for hit
         for player in &mut self.players {
             if self.ball.check_collision(player) {
-                self.ball.bounce(&Orientation::Vertical)?;
+                player.hit(&mut self.ball)?;
             }
         }
         
