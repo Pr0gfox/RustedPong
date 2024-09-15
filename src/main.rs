@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use ggez::{Context, ContextBuilder, GameResult};
-use ggez::graphics::{self, Canvas, Color, DrawMode, Mesh, Rect};
+use ggez::graphics::{self, Canvas, Color, DrawMode, DrawParam, Drawable, Mesh, PxScale, Rect, Text};
 use ggez::event::{self, EventHandler};
 use ggez::glam::Vec2;
 use ggez::input::keyboard::*;
@@ -20,19 +20,12 @@ pub const COL_FOREGROUND: Color = Color {
     b: 0.8,
     a: 1.0,
 };
-
-pub const COL_BALL: Color = Color {
-    r: 0.8,
-    g: 0.8,
-    b: 1.0,
-    a: 1.0,
-};
 // --------------------- COLORS ---------------------
 
 // ===================== MAIN =====================
 fn main() {
     // Make a Context.
-    let (mut ctx, event_loop) = ContextBuilder::new("my_game", "Cool Game Author")
+    let (mut ctx, event_loop) = ContextBuilder::new("RustedPong", "Soma Deme")
         .build()
         .expect("aieee, could not create ggez context!");
 
@@ -45,6 +38,13 @@ fn main() {
     event::run(ctx, event_loop, my_game);
 }
 // --------------------- MAIN ---------------------
+
+fn draw_debug_center_marker(ctx: &mut Context, canvas: &mut Canvas, center: &Vec2) -> GameResult {
+    let marker = Mesh::new_circle(ctx, DrawMode::fill(), Vec2 {x: 0.0, y: 0.0}, 3.0, 1.0, Color::RED)?;
+    canvas.draw(&marker, *center);
+
+    Ok(())
+}
 
 // ===================== PLAYER =====================
 #[derive(Debug, Copy, Clone)]
@@ -101,9 +101,7 @@ impl dyn Entity {
         canvas.draw(&rectangle, self.get_pos());
 
         // DEBUG
-        let center = Mesh::new_circle(ctx, DrawMode::fill(), Vec2 {x: 0.0, y: 0.0}, 3.0, 1.0, Color::RED)?;
-        canvas.draw(&center, self.get_pos());
-        // DEBUG END
+        draw_debug_center_marker(ctx, canvas, &self.get_pos())?;
 
         Ok(())
     }
@@ -199,6 +197,30 @@ impl Entity for Wall {
 }
 // --------------------- WALL ---------------------
 
+// ===================== GOAL =====================
+struct Goal {
+    pos: Vec2,
+    size: Vec2,
+    side: Side,
+}
+
+impl Goal {
+    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
+        (self as &dyn Entity).draw(ctx, canvas)
+    }
+}
+
+impl Entity for Goal {
+    fn get_pos(&self) -> Vec2 {
+        self.pos
+    }
+
+    fn get_size(&self) -> Vec2 {
+        self.size
+    }
+}
+// --------------------- GOAL ---------------------
+
 // ===================== BALL =====================
 struct Ball {
     pos: Vec2,
@@ -214,15 +236,15 @@ impl Ball {
             size: Vec2{ x: 10.0, y: 10.0 },
         }
     }
+
+    fn reset(&mut self) -> () {
+        self.pos = Vec2{ x: 300.0, y: 300.0 };
+        self.vel = Vec2{ x: 3.0, y: 2.0 };
+    }
     
     fn update(&mut self) -> GameResult {
         // Update position based on speed
         self.pos += self.vel;
-        
-        // TODO: Check for collisions
-        if self.pos.x < 10.0 || self.pos.x > 500.0 {
-            self.bounce(&Orientation::Vertical)?;
-        }
 
         Ok(())
     }
@@ -256,16 +278,66 @@ impl Entity for Ball {
 }
 // --------------------- BALL ---------------------
 
+// ===================== SCORE =====================
+struct Score {
+    left: u32,
+    right: u32,
+    text_pos: Vec2,
+}
+
+impl Score {
+    fn new() -> Self {
+        Score {
+            left: 0,
+            right: 0,
+            text_pos: Vec2 { x: 400.0, y: 50.0 },
+        }
+    }
+
+    fn increment(&mut self, side: &Side) -> () {
+        match side {
+            Side::Left  => self.left  += 1,
+            Side::Right => self.right += 1,
+        }
+    }
+
+    fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
+        // Assemble text
+        let mut text: String = self.left.to_string();
+        text += " - ";
+        text += self.right.to_string().as_str();
+
+        // Create text item
+        let mut score_text = Text::new(text);
+        score_text.set_scale(PxScale::from(100.0));
+        let bounding_box = score_text.dimensions(ctx).unwrap_or(Rect::one());
+        let half_size = Vec2{ x: bounding_box.w / 2.0, y: bounding_box.h / 2.0 };
+
+        // Draw text
+        let mut param: DrawParam = DrawParam::new();
+        param = param.color(Color::CYAN);
+        param = param.offset(-(self.text_pos - half_size));
+        canvas.draw(&score_text, param);
+
+        // DEBUG
+        draw_debug_center_marker(ctx, canvas, &self.text_pos)?;
+
+        Ok(())
+    }
+}
+// --------------------- SCORE ---------------------
+
 // ===================== GAME =====================
 struct MyGame {
     players: Vec<Player>,
     walls: Vec<Wall>,
+    goals: Vec<Goal>,
     ball: Ball,
+    score: Score,
 }
 
 impl MyGame {
-    pub fn new(_ctx: &mut Context) -> MyGame {
-        // Load/create resources such as images here.
+    pub fn new(ctx: &mut Context) -> MyGame {
         MyGame {
             players: vec![
                 Player::new(&Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
@@ -281,7 +353,20 @@ impl MyGame {
                     size: Vec2 { x: 800.0, y: 40.0 },
                 },
             ],
+            goals: vec![
+                Goal {
+                    pos: Vec2 { x: 40.0, y: 360.0 },
+                    size: Vec2 { x: 80.0, y: 600.0 },
+                    side: Side::Right,
+                },
+                Goal {
+                    pos: Vec2 { x: 800.0, y: 360.0 },
+                    size: Vec2 { x: 80.0, y: 600.0 },
+                    side: Side::Left,
+                },
+            ],
             ball: Ball::new(),
+            score: Score::new(),
         }
     }
 }
@@ -290,7 +375,7 @@ impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         // Update player position
         for player in &mut self.players {
-let prev_pos = player.pos;
+            let prev_pos = player.pos;
             player.update(ctx)?;
 
             // Check for wall collision
@@ -317,8 +402,14 @@ let prev_pos = player.pos;
                 self.ball.bounce(&Orientation::Horizontal)?;
             }
         }
-
+        
         // Check for score
+        for goal in &mut self.goals {
+            if self.ball.check_collision(goal) {
+                self.score.increment(&goal.side);
+                self.ball.reset();
+            }
+        }
         
         Ok(())
     }
@@ -328,9 +419,15 @@ let prev_pos = player.pos;
         let mut canvas = graphics::Canvas::from_frame(ctx, COL_BACKGROUND);
 
         // Draw map
+        for goal in &self.goals {
+            goal.draw(ctx, &mut canvas)?;
+        }
         for wall in &self.walls {
             wall.draw(ctx, &mut canvas)?;
         }
+
+        // Draw score
+        self.score.draw(ctx, &mut canvas)?;
 
         // Draw players
         for player in &self.players {
