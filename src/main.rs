@@ -20,6 +20,29 @@ pub const COL_FOREGROUND: Color = Color {
     b: 0.8,
     a: 1.0,
 };
+
+pub const COL_LEFT: Color = Color {
+    r: 0.0,
+    g: 0.8,
+    b: 1.0,
+    a: 1.0,
+};
+
+pub const COL_RIGHT: Color = Color {
+    r: 1.0,
+    g: 0.8,
+    b: 0.0,
+    a: 1.0,
+};
+
+fn lerp_color(a: &Color, b: &Color, s: f32) -> Color {
+    Color {
+        r: a.r * ( 1. - s ) + b.r * s,
+        g: a.g * ( 1. - s ) + b.g * s,
+        b: a.b * ( 1. - s ) + b.b * s,
+        a: a.a * ( 1. - s ) + b.a * s,
+    }
+}
 // --------------------- COLORS ---------------------
 
 // ===================== MAIN =====================
@@ -61,6 +84,7 @@ enum Orientation {
 trait Entity {
     fn get_pos(&self) -> Vec2;
     fn get_size(&self) -> Vec2;
+    fn get_color(&self) -> Color;
 }
 
 impl dyn Entity {
@@ -85,7 +109,10 @@ impl dyn Entity {
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
         // Create rectangle
         let size = self.get_size();
-        let rectangle = Mesh::new_rectangle(
+        let mut color_fill = self.get_color();
+        color_fill.a *= 0.5;
+
+        let rectangle_fill = Mesh::new_rectangle(
             ctx, 
             DrawMode::fill(),
             Rect::new(
@@ -94,14 +121,26 @@ impl dyn Entity {
                 size.x, 
                 size.y
             ),
-            COL_FOREGROUND
+            color_fill,
+        )?;
+        let rectangle = Mesh::new_rectangle(
+            ctx, 
+            DrawMode::stroke(2.),
+            Rect::new(
+                -size.x / 2.0, 
+                -size.y / 2.0, 
+                size.x, 
+                size.y
+            ),
+            self.get_color(),
         )?;
 
         // Draw rectangle
+        canvas.draw(&rectangle_fill, self.get_pos());
         canvas.draw(&rectangle, self.get_pos());
 
         // DEBUG
-        draw_debug_center_marker(ctx, canvas, &self.get_pos())?;
+        // draw_debug_center_marker(ctx, canvas, &self.get_pos())?;
 
         Ok(())
     }
@@ -119,26 +158,31 @@ struct Player {
     size: Vec2,
     controls: Controls,
     speed: f32,
+    color: Color
 }
 
 impl Player {
-    fn new(side: &Side, controls: &Controls) -> Self {
+    fn new(ctx: &mut Context, side: &Side, controls: &Controls) -> Self {
         Player {
             side: *side,
             pos: Vec2 {
                 // X position is based on side
                 x: match side {
-                    Side::Left => 40.0,
-                    Side::Right => 300.0,
+                    Side::Left => 100.,
+                    Side::Right => ctx.gfx.drawable_size().0 - 100.,
                 },
-                y: 150.0
+                y: ctx.gfx.drawable_size().1 / 2.
             },
             size: Vec2 {
                 x: 20.0,
-                y: 200.0
+                y: 150.0
             },
             controls: *controls,
             speed: 7.0,
+            color: match side {
+                Side::Left  => COL_LEFT,
+                Side::Right => COL_RIGHT,
+            }
         }
     }
 
@@ -171,6 +215,10 @@ impl Entity for Player {
     fn get_size(&self) -> Vec2 {
         self.size
     }
+
+    fn get_color(&self) -> Color {
+        self.color
+    }
 }
 // --------------------- PLAYER ---------------------
 
@@ -178,6 +226,7 @@ impl Entity for Player {
 struct Wall {
     pos: Vec2,
     size: Vec2,
+    color: Color,
 }
 
 impl Wall {
@@ -194,6 +243,10 @@ impl Entity for Wall {
     fn get_size(&self) -> Vec2 {
         self.size
     }
+
+    fn get_color(&self) -> Color {
+        self.color
+    }
 }
 // --------------------- WALL ---------------------
 
@@ -202,6 +255,7 @@ struct Goal {
     pos: Vec2,
     size: Vec2,
     side: Side,
+    color: Color,
 }
 
 impl Goal {
@@ -218,6 +272,10 @@ impl Entity for Goal {
     fn get_size(&self) -> Vec2 {
         self.size
     }
+
+    fn get_color(&self) -> Color {
+        self.color
+    }
 }
 // --------------------- GOAL ---------------------
 
@@ -226,19 +284,21 @@ struct Ball {
     pos: Vec2,
     vel: Vec2,
     size: Vec2,
+    color: Color
 }
 
 impl Ball {
-    fn new() -> Self {
+    fn new(ctx: &mut Context) -> Self {
         Ball {
-            pos: Vec2{ x: 300.0, y: 300.0 },
+            pos: Vec2{ x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 / 2. },
             vel: Vec2{ x: 3.0, y: 2.0 },
             size: Vec2{ x: 10.0, y: 10.0 },
+            color: Color::WHITE,
         }
     }
 
-    fn reset(&mut self) -> () {
-        self.pos = Vec2{ x: 300.0, y: 300.0 };
+    fn reset(&mut self, ctx: &mut Context) -> () {
+        self.pos = Vec2{ x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 / 2. };
         self.vel = Vec2{ x: 3.0, y: 2.0 };
     }
     
@@ -275,6 +335,10 @@ impl Entity for Ball {
     fn get_size(&self) -> Vec2 {
         self.size
     }
+
+    fn get_color(&self) -> Color {
+        self.color
+    }
 }
 // --------------------- BALL ---------------------
 
@@ -283,14 +347,19 @@ struct Score {
     left: u32,
     right: u32,
     text_pos: Vec2,
+    color: Color,
 }
 
 impl Score {
-    fn new() -> Self {
+    fn new(ctx: &mut Context) -> Self {
         Score {
             left: 0,
             right: 0,
-            text_pos: Vec2 { x: 400.0, y: 50.0 },
+            text_pos: Vec2 {
+                x: ctx.gfx.drawable_size().0 / 2.,
+                y: ctx.gfx.drawable_size().1 / 2.
+            },
+            color: lerp_color(&COL_BACKGROUND, &COL_FOREGROUND, 0.5),
         }
     }
 
@@ -304,23 +373,23 @@ impl Score {
     fn draw(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
         // Assemble text
         let mut text: String = self.left.to_string();
-        text += " - ";
+        text += " ";
         text += self.right.to_string().as_str();
 
         // Create text item
         let mut score_text = Text::new(text);
-        score_text.set_scale(PxScale::from(100.0));
+        score_text.set_scale(PxScale::from(200.0));
         let bounding_box = score_text.dimensions(ctx).unwrap_or(Rect::one());
         let half_size = Vec2{ x: bounding_box.w / 2.0, y: bounding_box.h / 2.0 };
 
         // Draw text
         let mut param: DrawParam = DrawParam::new();
-        param = param.color(Color::CYAN);
+        param = param.color(self.color);
         param = param.offset(-(self.text_pos - half_size));
         canvas.draw(&score_text, param);
 
         // DEBUG
-        draw_debug_center_marker(ctx, canvas, &self.text_pos)?;
+        //draw_debug_center_marker(ctx, canvas, &self.text_pos)?;
 
         Ok(())
     }
@@ -340,33 +409,37 @@ impl MyGame {
     pub fn new(ctx: &mut Context) -> MyGame {
         MyGame {
             players: vec![
-                Player::new(&Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
-                Player::new(&Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
+                Player::new(ctx, &Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
+                Player::new(ctx, &Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
             ],
             walls: vec![
                 Wall {
-                    pos: Vec2 { x: 400.0, y: 20.0 },
-                    size: Vec2 { x: 800.0, y: 40.0 },
+                    pos: Vec2 { x: ctx.gfx.drawable_size().0 / 2., y: 0. },
+                    size: Vec2 { x: ctx.gfx.drawable_size().0, y: 80.0 },
+                    color: COL_FOREGROUND,
                 },
                 Wall {
-                    pos: Vec2 { x: 400.0, y: 600.0 },
-                    size: Vec2 { x: 800.0, y: 40.0 },
+                    pos: Vec2 { x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 },
+                    size: Vec2 { x: ctx.gfx.drawable_size().0, y: 80.0 },
+                    color: COL_FOREGROUND,
                 },
-            ],
-            goals: vec![
+                ],
+                goals: vec![
                 Goal {
-                    pos: Vec2 { x: 40.0, y: 360.0 },
-                    size: Vec2 { x: 80.0, y: 600.0 },
+                    pos: Vec2 { x: 0., y: ctx.gfx.drawable_size().1 / 2. },
+                    size: Vec2 { x: 130.0, y: ctx.gfx.drawable_size().1 - 80. },
                     side: Side::Right,
+                    color: lerp_color(&COL_LEFT, &COL_BACKGROUND, 0.5),
                 },
                 Goal {
-                    pos: Vec2 { x: 800.0, y: 360.0 },
-                    size: Vec2 { x: 80.0, y: 600.0 },
+                    pos: Vec2 { x: ctx.gfx.drawable_size().0, y: ctx.gfx.drawable_size().1 / 2. },
+                    size: Vec2 { x: 130.0, y: ctx.gfx.drawable_size().1 - 80. },
                     side: Side::Left,
+                    color: lerp_color(&COL_RIGHT, &COL_BACKGROUND, 0.5),
                 },
             ],
-            ball: Ball::new(),
-            score: Score::new(),
+            ball: Ball::new(ctx),
+            score: Score::new(ctx),
         }
     }
 }
@@ -407,7 +480,7 @@ impl EventHandler for MyGame {
         for goal in &mut self.goals {
             if self.ball.check_collision(goal) {
                 self.score.increment(&goal.side);
-                self.ball.reset();
+                self.ball.reset(ctx);
             }
         }
         
