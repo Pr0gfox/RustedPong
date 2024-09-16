@@ -354,7 +354,7 @@ impl Ball {
         Ball {
             pos: Vec2{ x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 / 2. },
             prev_pos: Vec2::ZERO,
-            vel: Vec2{ x: 3.0, y: 2.0 },
+            vel: Vec2::ZERO,
             size: Vec2{ x: 10.0, y: 10.0 },
             bounciness: 0.9,
             x_speed_limit: 8.,
@@ -365,7 +365,11 @@ impl Ball {
 
     fn reset(&mut self, ctx: &mut Context) -> () {
         self.pos = Vec2{ x: ctx.gfx.drawable_size().0 / 2., y: ctx.gfx.drawable_size().1 / 2. };
-        self.vel = Vec2{ x: 3.0, y: 2.0 };
+        self.vel = Vec2::ZERO;
+    }
+
+    fn start(&mut self) -> () {
+        self.vel = Vec2 { x: 3., y: 0. };
     }
 
     fn check_collision(&self, other: &dyn Entity) -> bool {
@@ -484,6 +488,81 @@ impl Score {
 }
 // --------------------- SCORE ---------------------
 
+// ===================== TIMER =====================
+enum TimerStatus {
+    Ticking,
+    Alarm,
+    Inactive,
+}
+
+#[derive(Debug, Copy, Clone)]
+enum TimerFunction {
+    BallStart,
+    ScoreRegister(Side),
+}
+
+struct Timer {
+    status: TimerStatus,
+    function: Option<TimerFunction>,
+    time: f32,
+}
+
+impl Timer {
+    fn new() -> Self {
+        Timer {
+            status: TimerStatus::Inactive,
+            time: 0.,
+            function: None,
+        }
+    }
+
+    fn start(&mut self, function: TimerFunction) -> () {
+        self.time = 5.;
+        self.function = Some(function);
+        self.status = TimerStatus::Ticking;
+    }
+    
+    fn reset(&mut self) -> () {
+        self.function = None;
+        self.status = TimerStatus::Inactive;
+    }
+
+    fn get_function_to_execute(&mut self) -> Option<TimerFunction> {
+        match self.status {
+            TimerStatus::Alarm => {
+                let func = self.function;
+                self.reset();
+                func
+            },
+            _ => None
+        }
+    }
+
+    fn is_ticking(&self) -> bool {
+        match self.status {
+            TimerStatus::Ticking => true,
+            _ => false
+        }
+    }
+
+    fn update(&mut self) -> () {
+        match self.status {
+            TimerStatus::Ticking => {
+                if self.time > 0. {
+                    // Decrease time
+                    self.time -= 0.1;
+                } else {
+                    // Set new state
+                    self.status = TimerStatus::Alarm;
+                }
+            },
+            TimerStatus::Alarm => (),
+            TimerStatus::Inactive => (),
+        }
+    }
+}
+// --------------------- TIMER ---------------------
+
 // ===================== GAME =====================
 struct MyGame {
     players: Vec<Player>,
@@ -491,11 +570,12 @@ struct MyGame {
     goals: Vec<Goal>,
     ball: Ball,
     score: Score,
+    timer: Timer,
 }
 
 impl MyGame {
     pub fn new(ctx: &mut Context) -> MyGame {
-        MyGame {
+        let mut my_game = MyGame {
             players: vec![
                 Player::new(ctx, &Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
                 Player::new(ctx, &Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
@@ -532,12 +612,30 @@ impl MyGame {
             ],
             ball: Ball::new(ctx),
             score: Score::new(ctx),
-        }
+            timer: Timer::new(),
+        };
+
+        // Start timer for first round
+        my_game.timer.start(TimerFunction::BallStart);
+
+        // Return
+        my_game
     }
 }
 
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
+        // Update timer and get events
+        self.timer.update();
+        match self.timer.get_function_to_execute() {
+            Some(TimerFunction::BallStart) => self.ball.start(),
+            Some(TimerFunction::ScoreRegister(side)) => {
+                self.ball.reset(ctx);
+                self.score.increment(&side);
+                self.timer.start(TimerFunction::BallStart);
+            },
+            None => (),
+        }
 
         // Collect all entities into a vector
         // TODO: This piece of code is a copy-paste available in draw() and update()
@@ -591,9 +689,10 @@ impl EventHandler for MyGame {
         // Check for score
         for goal in &mut self.goals {
             if self.ball.check_collision(goal) {
-                self.score.increment(&goal.side);
                 (goal as &mut dyn Entity).trig_excited();
-                self.ball.reset(ctx);
+                if !self.timer.is_ticking() {
+                    self.timer.start(TimerFunction::ScoreRegister(goal.side));
+                }
             }
         }
         
