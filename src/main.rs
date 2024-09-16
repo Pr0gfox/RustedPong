@@ -368,8 +368,14 @@ impl Ball {
         self.vel = Vec2::ZERO;
     }
 
-    fn start(&mut self) -> () {
-        self.vel = Vec2 { x: 3., y: 0. };
+    fn start(&mut self, side: Side) -> () {
+        self.vel = Vec2 {
+            x: match side {
+                Side::Left => 3.,
+                Side::Right => -3.,
+            },
+            y: 0.
+        };
     }
 
     fn check_collision(&self, other: &dyn Entity) -> bool {
@@ -497,7 +503,7 @@ enum TimerStatus {
 
 #[derive(Debug, Copy, Clone)]
 enum TimerFunction {
-    BallStart,
+    BallStart(Side),
     ScoreRegister(Side),
 }
 
@@ -616,7 +622,7 @@ impl MyGame {
         };
 
         // Start timer for first round
-        my_game.timer.start(TimerFunction::BallStart);
+        my_game.timer.start(TimerFunction::BallStart(Side::Left));
 
         // Return
         my_game
@@ -628,11 +634,11 @@ impl EventHandler for MyGame {
         // Update timer and get events
         self.timer.update();
         match self.timer.get_function_to_execute() {
-            Some(TimerFunction::BallStart) => self.ball.start(),
+            Some(TimerFunction::BallStart(side)) => self.ball.start(side),
             Some(TimerFunction::ScoreRegister(side)) => {
                 self.ball.reset(ctx);
                 self.score.increment(&side);
-                self.timer.start(TimerFunction::BallStart);
+                self.timer.start(TimerFunction::BallStart(side));
             },
             None => (),
         }
