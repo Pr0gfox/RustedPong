@@ -375,14 +375,14 @@ impl Ball {
             Orientation::Vertical   => {
                 self.pos.x = self.prev_pos.x;
                 self.vel.x *= -self.bounciness;
-            }
-        }
 
-        // Limit X speed
+                // Limit X speed because players could hit ball too fast
                 if self.vel.x > self.x_speed_limit {
                     self.vel.x = self.x_speed_limit;
                 } else if self.vel.x < -self.x_speed_limit {
                     self.vel.x = -self.x_speed_limit;
+                }
+            }
         }
 
         // Get excited
