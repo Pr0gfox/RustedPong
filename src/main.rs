@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use::macroquad::prelude::*;
+use miniquad::window::screen_size;
 
 // ===================== COLORS =====================
 pub const COL_BACKGROUND: Color = Color {
@@ -104,6 +105,7 @@ trait Entity {
     fn get_color(&self) -> Color;
     fn get_excitement(&self) -> f32;
     fn get_excitement_ref(&mut self) -> &mut f32;
+    fn resize(&mut self) -> ();
 }
 
 impl dyn Entity {
@@ -144,21 +146,11 @@ struct Player {
 }
 
 impl Player {
-    fn new(side: &Side, controls: &Controls) -> Self {
+    fn new(side: Side, controls: &Controls) -> Self {
         Player {
-            side: *side,
-            pos: Vec2 {
-                // X position is based on side
-                x: match side {
-                    Side::Left => 100.,
-                    Side::Right => screen_width() - 100.,
-                },
-                y: screen_height() / 2.
-            },
-            size: Vec2 {
-                x: 20.0,
-                y: 150.0
-            },
+            side: side,
+            pos: Player::calc_pos(side),
+            size: Player::calc_size(),
             controls: *controls,
             speed: 7.0,
             curve_strength: 1.7,
@@ -193,6 +185,24 @@ impl Player {
         // Get excited
         (self as &mut dyn Entity).trig_excited();
     }
+
+    fn calc_pos(side: Side) -> Vec2 {
+        Vec2 {
+            // X position is based on side
+            x: match side {
+                Side::Left => 100.,
+                Side::Right => screen_width() - 100.,
+            },
+            y: screen_height() / 2.
+        }
+    }
+
+    fn calc_size() -> Vec2 {
+        Vec2 {
+            x: 20.0,
+            y: 150.0
+        }
+    }
 }
 
 impl Entity for Player {
@@ -214,6 +224,11 @@ impl Entity for Player {
 
     fn get_excitement_ref(&mut self) -> &mut f32 {
         &mut self.excitement
+    }
+
+    fn resize(&mut self) -> () {
+        self.size = Player::calc_size();
+        self.pos  = Player::calc_pos(self.side);
     }
 
     fn update(&mut self) -> () {
@@ -258,11 +273,47 @@ impl Entity for Player {
 // --------------------- PLAYER ---------------------
 
 // ===================== WALL =====================
+#[derive(Debug, Copy, Clone)]
+enum WallSide {
+    Top,
+    Bottom,
+}
+
 struct Wall {
     pos: Vec2,
     size: Vec2,
     color: Color,
     excitement: f32,
+    side: WallSide,
+}
+
+impl Wall {
+    fn new(side: WallSide) -> Self {
+        Wall {
+            pos: Wall::calc_pos(side),
+            size: Wall::calc_size(),
+            color: COL_FOREGROUND,
+            excitement: 0.,
+            side: side,
+        }
+    }
+
+    fn calc_pos(side: WallSide) -> Vec2 {
+        Vec2 {
+            x: screen_width() / 2.,
+            y: match side {
+                WallSide::Top    => 0.,
+                WallSide::Bottom => screen_height(),
+            }
+        }
+    }
+
+    fn calc_size() -> Vec2 {
+        Vec2 {
+            x: screen_width() * 1.5,
+            y: 80.0
+        }
+    }
 }
 
 impl Entity for Wall {
@@ -285,6 +336,11 @@ impl Entity for Wall {
     fn get_excitement_ref(&mut self) -> &mut f32 {
         &mut self.excitement
     }
+
+    fn resize(&mut self) -> () {
+        self.size = Wall::calc_size();
+        self.pos  = Wall::calc_pos(self.side);
+    }
 }
 // --------------------- WALL ---------------------
 
@@ -295,6 +351,42 @@ struct Goal {
     side: Side,
     color: Color,
     excitement: f32,
+}
+
+impl Goal {
+    fn new(side: Side) -> Self {
+        Goal {
+            pos: Goal::calc_pos(side),
+            size: Goal::calc_size(),
+            side: side,
+            color: lerp_color(
+                &match side {
+                    Side::Left => COL_LEFT, 
+                    Side::Right => COL_RIGHT,
+                }, 
+                &COL_BACKGROUND, 
+                0.5
+            ),
+            excitement: 0.,
+        }
+    }
+
+    fn calc_pos(side: Side) -> Vec2 {
+        Vec2 {
+            x: match side {
+                Side::Left  => 0.,
+                Side::Right => screen_width(),
+            },
+            y: screen_height() / 2.
+        }
+    }
+
+    fn calc_size() -> Vec2 {
+        Vec2 {
+            x: 130.0,
+            y: screen_height() - 80.
+        }
+    }
 }
 
 impl Entity for Goal {
@@ -316,6 +408,11 @@ impl Entity for Goal {
 
     fn get_excitement_ref(&mut self) -> &mut f32 {
         &mut self.excitement
+    }
+
+    fn resize(&mut self) -> () {
+        self.size = Goal::calc_size();
+        self.pos  = Goal::calc_pos(self.side);
     }
 }
 // --------------------- GOAL ---------------------
@@ -409,6 +506,14 @@ impl Entity for Ball {
 
     fn get_excitement_ref(&mut self) -> &mut f32 {
         &mut self.excitement
+    }
+
+    fn resize(&mut self) -> () {
+        self.pos  = Vec2 {
+            x: screen_width() / 2.,
+            y: screen_height() / 2.,
+        };
+        self.vel = Vec2::ZERO;
     }
 
     fn update(&mut self) -> () {
@@ -551,48 +656,28 @@ struct MyGame {
     ball: Ball,
     score: Score,
     timer: Timer,
+    last_screen_size: Vec2,
 }
 
 impl MyGame {
     pub fn new() -> MyGame {
         let mut my_game = MyGame {
             players: vec![
-                Player::new(&Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
-                Player::new(&Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
+                Player::new(Side::Left, &Controls{ up:KeyCode::W, down:KeyCode::S }),
+                Player::new(Side::Right, &Controls{ up:KeyCode::Up, down:KeyCode::Down })
             ],
             walls: vec![
-                Wall {
-                    pos: Vec2 { x: screen_width() / 2., y: 0. },
-                    size: Vec2 { x: screen_width() * 1.5, y: 80.0 },
-                    color: COL_FOREGROUND,
-                    excitement: 0.,
-                },
-                Wall {
-                    pos: Vec2 { x: screen_width() / 2., y: screen_height() },
-                    size: Vec2 { x: screen_width() * 1.5, y: 80.0 },
-                    color: COL_FOREGROUND,
-                    excitement: 0.,
-                },
-                ],
-                goals: vec![
-                Goal {
-                    pos: Vec2 { x: 0., y: screen_height() / 2. },
-                    size: Vec2 { x: 130.0, y: screen_height() - 80. },
-                    side: Side::Right,
-                    color: lerp_color(&COL_LEFT, &COL_BACKGROUND, 0.5),
-                    excitement: 0.,
-                },
-                Goal {
-                    pos: Vec2 { x: screen_width(), y: screen_height() / 2. },
-                    size: Vec2 { x: 130.0, y: screen_height() - 80. },
-                    side: Side::Left,
-                    color: lerp_color(&COL_RIGHT, &COL_BACKGROUND, 0.5),
-                    excitement: 0.,
-                },
+                Wall::new(WallSide::Top),
+                Wall::new(WallSide::Bottom),
+            ],
+            goals: vec![
+                Goal::new(Side::Left),
+                Goal::new(Side::Right),
             ],
             ball: Ball::new(),
             score: Score::new(),
             timer: Timer::new(),
+            last_screen_size: Vec2::from(screen_size()),
         };
 
         // Start timer for first round
@@ -618,6 +703,22 @@ impl MyGame {
         }
         entity_refs.push(&mut self.ball as &mut dyn Entity);
     }
+
+    /// Resizes and repositions every entity in case of the window being resized.
+    /// Resets the current round but the score remains the same.
+    fn resize(&mut self) -> () {
+        // Collect all entities into a vector
+        let mut entity_refs: Vec<&mut dyn Entity> = Vec::new();
+        self.get_entity_refs(&mut entity_refs);
+
+        // Call resize for each entity
+        for entity_ref in entity_refs {
+            entity_ref.resize();
+        }
+
+        // Ball was reset during resize, needs to be started again
+        self.timer.start(TimerFunction::BallStart(Side::Left));
+    }
 }
 
 trait EventHandler {
@@ -627,11 +728,22 @@ trait EventHandler {
 
 impl EventHandler for MyGame {
     fn update(&mut self) -> () {
+        // Check if window has been resized since las iteration
+        let curr_screen_size = Vec2::from(screen_size());
+        if curr_screen_size != self.last_screen_size {
+            self.resize();
+            self.last_screen_size = curr_screen_size;
+        }
+
         // Update timer and get events
         self.timer.update();
         match self.timer.get_function_to_execute() {
-            Some(TimerFunction::BallStart(side)) => self.ball.start(side),
+            Some(TimerFunction::BallStart(side)) => {
+                // Start ball
+                self.ball.start(side)
+            },
             Some(TimerFunction::ScoreRegister(side)) => {
+                // Register score and start ball with some delay
                 self.ball.reset();
                 self.score.increment(&side);
                 self.timer.start(TimerFunction::BallStart(side));
@@ -680,8 +792,15 @@ impl EventHandler for MyGame {
         for goal in &mut self.goals {
             if self.ball.check_collision(goal) {
                 (goal as &mut dyn Entity).trig_excited();
+                // Check if the timer is ticking already, no need to keep resetting it
                 if !self.timer.is_ticking() {
-                    self.timer.start(TimerFunction::ScoreRegister(goal.side));
+                    // Tart register score timer for the OTHER player
+                    self.timer.start(
+                        TimerFunction::ScoreRegister( match goal.side {
+                            Side::Left => Side::Right,
+                            Side::Right => Side::Left,
+                        })
+                    );
                 }
             }
         }
