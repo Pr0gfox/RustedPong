@@ -587,7 +587,7 @@ struct Score {
     left: u32,
     right: u32,
     color: Color,
-    excitement_color: Color,
+    excitement_side: Side,
     excitement: f32,
 }
 
@@ -597,44 +597,52 @@ impl Score {
             left: 0,
             right: 0,
             color: lerp_color(&COL_BACKGROUND, &COL_FOREGROUND, 0.5),
-            excitement_color: WHITE,
+            excitement_side: Side::Left,
             excitement: 0.,
         }
     }
 
     fn increment(&mut self, side: Side) -> () {
         match side {
-            Side::Left  => {
-                self.left += 1;
-                self.excitement_color = COL_LEFT;
-                self.trig_excited();
-            },
-            Side::Right  => {
-                self.right += 1;
-                self.excitement_color = COL_RIGHT;
-                self.trig_excited();
-            },
+            Side::Left  => self.left  += 1,
+            Side::Right => self.right += 1,
         }
+        self.excitement_side = side;
+        self.trig_excited();
     }
 
     fn draw(&self) -> () {
         // Assemble text
-        let mut text: String = self.left.to_string();
-        text += " ";
-        text += self.right.to_string().as_str();
+        let text_left = self.left.to_string();
+        let text_right = self.right.to_string();
         let font_size = 250;
-
-        // Get color
-        let color = lerp_color(&self.color, &self.excitement_color, self.excitement);
+        let text_left_center = get_text_center(&text_left, None, font_size, 1., 0.);
+        let text_right_center = get_text_center(&text_right, None, font_size, 1., 0.);
+        
+        // Get colors
+        let color_left = match self.excitement_side {
+            Side::Left  => lerp_color(&self.color, &COL_LEFT, self.excitement),
+            Side::Right => self.color,
+        };
+        let color_right = match self.excitement_side {
+            Side::Right => lerp_color(&self.color, &COL_RIGHT, self.excitement),
+            Side::Left  => self.color,
+        };
 
         // Draw
-        let text_center = get_text_center(&text, None, font_size, 1., 0.);
         draw_text(
-            &text,
-            screen_width() / 2. - text_center.x,
-            screen_height() / 2. - text_center.y,
+            &text_left,
+            (screen_width() + text_left_center.y)/ 2. - text_left_center.x * 2.,
+            screen_height() / 2. - text_left_center.y,
             font_size as f32,
-            color
+            color_left
+        );
+        draw_text(
+            &text_right,
+            (screen_width() - text_right_center.y) / 2.,
+            screen_height() / 2. - text_right_center.y,
+            font_size as f32,
+            color_right
         );
     }
 
