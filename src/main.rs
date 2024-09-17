@@ -68,11 +68,7 @@ enum Orientation {
     Horizontal,
 }
 
-trait Entity {
-    fn update(&mut self) -> () {
-        self.lower_excitement();
-    }
-
+trait ExcitedThing {
     fn trig_excited(&mut self) -> () {
         *self.get_excitement_ref() = 0.7;
     }
@@ -86,26 +82,38 @@ trait Entity {
         }
     }
 
+    fn calc_stroke_color(&self) -> Color {
+        lerp_color(&self.get_base_color(), &WHITE, self.get_excitement())
+    }
+    
+    fn calc_fill_color(&self) -> Color {
+        let mut color_fill = self.get_base_color();
+        color_fill.a *= 0.5 + self.get_excitement();
+        color_fill
+    }
+    
+    fn get_base_color(&self) -> Color;
+    fn get_excitement(&self) -> f32;
+    fn get_excitement_ref(&mut self) -> &mut f32;
+}
+
+trait Entity {
     /// Generic draw function for rectangle shaped entities
     fn draw(&self) -> () {
         // Create rectangle
         let pos = self.get_pos();
         let size = self.get_size();
-        let excitement = self.get_excitement();
-        let color_stroke = lerp_color(&self.get_color(), &WHITE, excitement);
-        let mut color_fill = self.get_color();
-        color_fill.a *= 0.5 + excitement;
 
-        draw_rectangle(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, color_fill);
-        draw_rectangle_lines(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, 4., color_stroke);
+        draw_rectangle(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, self.get_fill_color());
+        draw_rectangle_lines(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, 4., self.get_stroke_color());
     }
 
     fn get_pos(&self) -> Vec2;
     fn get_size(&self) -> Vec2;
-    fn get_color(&self) -> Color;
-    fn get_excitement(&self) -> f32;
-    fn get_excitement_ref(&mut self) -> &mut f32;
+    fn get_stroke_color(&self) -> Color;
+    fn get_fill_color(&self) -> Color;
     fn resize(&mut self) -> ();
+    fn update(&mut self) -> ();
 }
 
 impl dyn Entity {
@@ -183,7 +191,7 @@ impl Player {
         ball.vel.x *= 1. + (1. - rel_diff.abs()) * self.straight_strength;
 
         // Get excited
-        (self as &mut dyn Entity).trig_excited();
+        self.trig_excited();
     }
 
     fn calc_pos(side: Side) -> Vec2 {
@@ -205,16 +213,8 @@ impl Player {
     }
 }
 
-impl Entity for Player {
-    fn get_pos(&self) -> Vec2 {
-        self.pos
-    }
-
-    fn get_size(&self) -> Vec2 {
-        self.size
-    }
-
-    fn get_color(&self) -> Color {
+impl ExcitedThing for Player {
+    fn get_base_color(&self) -> Color {
         self.color
     }
 
@@ -224,6 +224,24 @@ impl Entity for Player {
 
     fn get_excitement_ref(&mut self) -> &mut f32 {
         &mut self.excitement
+    }
+}
+
+impl Entity for Player {
+    fn get_pos(&self) -> Vec2 {
+        self.pos
+    }
+
+    fn get_size(&self) -> Vec2 {
+        self.size
+    }
+
+    fn get_stroke_color(&self) -> Color {
+        self.calc_stroke_color()
+    }
+
+    fn get_fill_color(&self) -> Color {
+        self.calc_fill_color()
     }
 
     fn resize(&mut self) -> () {
@@ -267,7 +285,7 @@ impl Entity for Player {
         }
 
         // Lower excitement (aka entity glow)
-        (self as &mut dyn Entity).lower_excitement();
+        self.lower_excitement();
     }
 }
 // --------------------- PLAYER ---------------------
@@ -316,16 +334,8 @@ impl Wall {
     }
 }
 
-impl Entity for Wall {
-    fn get_pos(&self) -> Vec2 {
-        self.pos
-    }
-
-    fn get_size(&self) -> Vec2 {
-        self.size
-    }
-
-    fn get_color(&self) -> Color {
+impl ExcitedThing for Wall {
+    fn get_base_color(&self) -> Color {
         self.color
     }
 
@@ -336,10 +346,32 @@ impl Entity for Wall {
     fn get_excitement_ref(&mut self) -> &mut f32 {
         &mut self.excitement
     }
+}
+
+impl Entity for Wall {
+    fn get_pos(&self) -> Vec2 {
+        self.pos
+    }
+
+    fn get_size(&self) -> Vec2 {
+        self.size
+    }
+
+    fn get_stroke_color(&self) -> Color {
+        self.calc_stroke_color()
+    }
+
+    fn get_fill_color(&self) -> Color {
+        self.calc_fill_color()
+    }
 
     fn resize(&mut self) -> () {
         self.size = Wall::calc_size();
         self.pos  = Wall::calc_pos(self.side);
+    }
+
+    fn update(&mut self) -> () {
+        self.lower_excitement();
     }
 }
 // --------------------- WALL ---------------------
@@ -389,16 +421,8 @@ impl Goal {
     }
 }
 
-impl Entity for Goal {
-    fn get_pos(&self) -> Vec2 {
-        self.pos
-    }
-
-    fn get_size(&self) -> Vec2 {
-        self.size
-    }
-
-    fn get_color(&self) -> Color {
+impl ExcitedThing for Goal {
+    fn get_base_color(&self) -> Color {
         self.color
     }
 
@@ -409,10 +433,32 @@ impl Entity for Goal {
     fn get_excitement_ref(&mut self) -> &mut f32 {
         &mut self.excitement
     }
+}
+
+impl Entity for Goal {
+    fn get_pos(&self) -> Vec2 {
+        self.pos
+    }
+
+    fn get_size(&self) -> Vec2 {
+        self.size
+    }
+
+    fn get_stroke_color(&self) -> Color {
+        self.calc_stroke_color()
+    }
+
+    fn get_fill_color(&self) -> Color {
+        self.calc_fill_color()
+    }
 
     fn resize(&mut self) -> () {
         self.size = Goal::calc_size();
         self.pos  = Goal::calc_pos(self.side);
+    }
+
+    fn update(&mut self) -> () {
+        self.lower_excitement();
     }
 }
 // --------------------- GOAL ---------------------
@@ -483,7 +529,21 @@ impl Ball {
         }
 
         // Get excited
-        (self as &mut dyn Entity).trig_excited();
+        self.trig_excited();
+    }
+}
+
+impl ExcitedThing for Ball {
+    fn get_base_color(&self) -> Color {
+        self.color
+    }
+
+    fn get_excitement(&self) -> f32 {
+        self.excitement
+    }
+
+    fn get_excitement_ref(&mut self) -> &mut f32 {
+        &mut self.excitement
     }
 }
 
@@ -496,16 +556,12 @@ impl Entity for Ball {
         self.size
     }
 
-    fn get_color(&self) -> Color {
-        self.color
+    fn get_stroke_color(&self) -> Color {
+        self.calc_stroke_color()
     }
 
-    fn get_excitement(&self) -> f32 {
-        self.excitement
-    }
-
-    fn get_excitement_ref(&mut self) -> &mut f32 {
-        &mut self.excitement
+    fn get_fill_color(&self) -> Color {
+        self.calc_fill_color()
     }
 
     fn resize(&mut self) -> () {
@@ -521,7 +577,7 @@ impl Entity for Ball {
         self.prev_pos = self.pos;
         self.pos += self.vel;
 
-        (self as &mut dyn Entity).lower_excitement();
+        self.lower_excitement();
     }
 }
 // --------------------- BALL ---------------------
@@ -791,7 +847,7 @@ impl EventHandler for MyGame {
         // Check for score
         for goal in &mut self.goals {
             if self.ball.check_collision(goal) {
-                (goal as &mut dyn Entity).trig_excited();
+                goal.trig_excited();
                 // Check if the timer is ticking already, no need to keep resetting it
                 if !self.timer.is_ticking() {
                     // Tart register score timer for the OTHER player
