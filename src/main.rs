@@ -497,8 +497,8 @@ impl Ball {
     fn start(&mut self, side: Side) -> () {
         self.vel = Vec2 {
             x: match side {
-                Side::Left => 3.,
-                Side::Right => -3.,
+                Side::Left => -3.,
+                Side::Right => 3.,
             },
             y: 0.
         };
@@ -586,8 +586,9 @@ impl Entity for Ball {
 struct Score {
     left: u32,
     right: u32,
-    text_pos: Vec2,
     color: Color,
+    excitement_color: Color,
+    excitement: f32,
 }
 
 impl Score {
@@ -595,18 +596,24 @@ impl Score {
         Score {
             left: 0,
             right: 0,
-            text_pos: Vec2 {
-                x: screen_width() / 2.,
-                y: screen_height() / 2.
-            },
             color: lerp_color(&COL_BACKGROUND, &COL_FOREGROUND, 0.5),
+            excitement_color: WHITE,
+            excitement: 0.,
         }
     }
 
-    fn increment(&mut self, side: &Side) -> () {
+    fn increment(&mut self, side: Side) -> () {
         match side {
-            Side::Left  => self.left  += 1,
-            Side::Right => self.right += 1,
+            Side::Left  => {
+                self.left += 1;
+                self.excitement_color = COL_LEFT;
+                self.trig_excited();
+            },
+            Side::Right  => {
+                self.right += 1;
+                self.excitement_color = COL_RIGHT;
+                self.trig_excited();
+            },
         }
     }
 
@@ -617,14 +624,42 @@ impl Score {
         text += self.right.to_string().as_str();
         let font_size = 250;
 
+        // Get color
+        let color = lerp_color(&self.color, &self.excitement_color, self.excitement);
+
+        // Draw
         let text_center = get_text_center(&text, None, font_size, 1., 0.);
         draw_text(
             &text,
             screen_width() / 2. - text_center.x,
             screen_height() / 2. - text_center.y,
             font_size as f32,
-            lerp_color(&COL_FOREGROUND, &COL_BACKGROUND, 0.5)
+            color
         );
+    }
+
+    fn update(&mut self) -> () {
+        // TODO: This uses the ExcitedThing implementation with a different magic number
+        // Consider reworking that function with some kind of parameter
+        if self.excitement > 0. {
+            self.excitement -= 0.01;
+        } else {
+            self.excitement = 0.;
+        }
+    }
+}
+
+impl ExcitedThing for Score {
+    fn get_base_color(&self) -> Color {
+        self.color
+    }
+
+    fn get_excitement(&self) -> f32 {
+        self.excitement
+    }
+
+    fn get_excitement_ref(&mut self) -> &mut f32 {
+        &mut self.excitement
     }
 }
 // --------------------- SCORE ---------------------
@@ -639,7 +674,7 @@ enum TimerStatus {
 #[derive(Debug, Copy, Clone)]
 enum TimerFunction {
     BallStart(Side),
-    ScoreRegister(Side),
+    BallReset(Side),
 }
 
 struct Timer {
@@ -798,10 +833,9 @@ impl EventHandler for MyGame {
                 // Start ball
                 self.ball.start(side)
             },
-            Some(TimerFunction::ScoreRegister(side)) => {
-                // Register score and start ball with some delay
+            Some(TimerFunction::BallReset(side)) => {
+                // Start ball with some delay
                 self.ball.reset();
-                self.score.increment(&side);
                 self.timer.start(TimerFunction::BallStart(side));
             },
             None => (),
@@ -845,18 +879,18 @@ impl EventHandler for MyGame {
         }
         
         // Check for score
+        self.score.update();
         for goal in &mut self.goals {
             if self.ball.check_collision(goal) {
                 goal.trig_excited();
-                // Check if the timer is ticking already, no need to keep resetting it
+                // Check if the timer is ticking already, if so, the there is nothing to be done
                 if !self.timer.is_ticking() {
-                    // Tart register score timer for the OTHER player
-                    self.timer.start(
-                        TimerFunction::ScoreRegister( match goal.side {
-                            Side::Left => Side::Right,
-                            Side::Right => Side::Left,
-                        })
-                    );
+                    // Register score for the opponent and start timer for ball reset
+                    self.score.increment(match goal.side {
+                        Side::Left => Side::Right,
+                        Side::Right => Side::Left,
+                    });
+                    self.timer.start(TimerFunction::BallReset(goal.side));
                 }
             }
         }
