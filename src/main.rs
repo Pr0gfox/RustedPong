@@ -56,7 +56,7 @@ async fn main() {
 // --------------------- MAIN ---------------------
 
 // ===================== PLAYER =====================
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum Side {
     Left,
     Right,
@@ -217,14 +217,41 @@ impl Entity for Player {
     }
 
     fn update(&mut self) -> () {
+        // Flags that keep track of the intended movement of the player
+        // Move up and move down CAN be true at the same time, in that case the player remains still
+        let mut move_up = false;
+        let mut move_down = false;
 
+        // Handle touch screen input
+        for touch in touches_local() {
+            // Check if the touch is on the current player's side
+            if (self.side == Side::Left && touch.position.x < 0.) || 
+                (self.side == Side::Right && touch.position.x > 0.) {
+                if touch.position.y < 0. {
+                    move_up = true;
+                } else {
+                    move_down = true;
+                }
+            } 
+        }
+
+        // Handle keyboard input
         if is_key_down(self.controls.up) {
-            self.pos.y -= self.speed;
+            move_up = true;
         }
         if is_key_down(self.controls.down) {
+            move_down = true;
+        }
+        
+        // Update position
+        if move_up {
+            self.pos.y -= self.speed;
+        }
+        if move_down {
             self.pos.y += self.speed;
         }
 
+        // Lower excitement (aka entity glow)
         (self as &mut dyn Entity).lower_excitement();
     }
 }
@@ -352,10 +379,10 @@ impl Ball {
         }
 
         // Limit X speed
-        if self.vel.x > self.x_speed_limit {
-            self.vel.x = self.x_speed_limit;
-        } else if self.vel.x < -self.x_speed_limit {
-            self.vel.x = -self.x_speed_limit;
+                if self.vel.x > self.x_speed_limit {
+                    self.vel.x = self.x_speed_limit;
+                } else if self.vel.x < -self.x_speed_limit {
+                    self.vel.x = -self.x_speed_limit;
         }
 
         // Get excited
