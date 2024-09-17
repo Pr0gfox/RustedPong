@@ -85,6 +85,20 @@ trait Entity {
         }
     }
 
+    /// Generic draw function for rectangle shaped entities
+    fn draw(&self) -> () {
+        // Create rectangle
+        let pos = self.get_pos();
+        let size = self.get_size();
+        let excitement = self.get_excitement();
+        let color_stroke = lerp_color(&self.get_color(), &WHITE, excitement);
+        let mut color_fill = self.get_color();
+        color_fill.a *= 0.5 + excitement;
+
+        draw_rectangle(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, color_fill);
+        draw_rectangle_lines(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, 4., color_stroke);
+    }
+
     fn get_pos(&self) -> Vec2;
     fn get_size(&self) -> Vec2;
     fn get_color(&self) -> Color;
@@ -108,20 +122,6 @@ impl dyn Entity {
         else {
             true
         }
-    }
-
-    /// Generic draw function for rectangle shaped entities
-    fn draw(&self) -> () {
-        // Create rectangle
-        let pos = self.get_pos();
-        let size = self.get_size();
-        let excitement = self.get_excitement();
-        let color_stroke = lerp_color(&self.get_color(), &WHITE, excitement);
-        let mut color_fill = self.get_color();
-        color_fill.a *= 0.5 + excitement;
-
-        draw_rectangle(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, color_fill);
-        draw_rectangle_lines(pos.x - size.x / 2., pos.y - size.y / 2., size.x, size.y, 4., color_stroke);
     }
 }
 
@@ -601,6 +601,23 @@ impl MyGame {
         // Return
         my_game
     }
+
+    fn get_entity_refs<'a>(&'a mut self, entity_refs: &mut Vec<&'a mut dyn Entity>) -> () {
+        // Init vector to make sure it's empty
+        *entity_refs = Vec::new();
+
+        // Get entity refs
+        for goal in &mut self.goals {
+            entity_refs.push(goal as &mut dyn Entity);
+        }
+        for wall in &mut self.walls {
+            entity_refs.push(wall as &mut dyn Entity);
+        }
+        for player in &mut self.players {
+            entity_refs.push(player as &mut dyn Entity);
+        }
+        entity_refs.push(&mut self.ball as &mut dyn Entity);
+    }
 }
 
 trait EventHandler {
@@ -623,23 +640,11 @@ impl EventHandler for MyGame {
         }
 
         // Collect all entities into a vector
-        // TODO: This piece of code is a copy-paste available in draw() and update()
-        // It would be nite to have this list when constructing MyGame
         let mut entity_refs: Vec<&mut dyn Entity> = Vec::new();
-        for goal in &mut self.goals {
-            entity_refs.push(goal as &mut dyn Entity);
-        }
-        for wall in &mut self.walls {
-            entity_refs.push(wall as &mut dyn Entity);
-        }
-        for player in &mut self.players {
-            entity_refs.push(player as &mut dyn Entity);
-        }
-        entity_refs.push(&mut self.ball as &mut dyn Entity);
+        self.get_entity_refs(&mut entity_refs);
 
         // Call update for each entity
-        for entity_ref in entity_refs
-        {
+        for entity_ref in entity_refs {
             entity_ref.update();
         }
 
@@ -686,27 +691,15 @@ impl EventHandler for MyGame {
         // Create canvas to draw on
         clear_background(COL_BACKGROUND);
 
-        // Collect all entities into a vector
-        // TODO: This piece of code is a copy-paste available in draw() and update()
-        // It would be nite to have this list when constructing MyGame
-        let mut entity_refs: Vec<&mut dyn Entity> = Vec::new();
-        for goal in &mut self.goals {
-            entity_refs.push(goal as &mut dyn Entity);
-        }
-        for wall in &mut self.walls {
-            entity_refs.push(wall as &mut dyn Entity);
-        }
-        for player in &mut self.players {
-            entity_refs.push(player as &mut dyn Entity);
-        }
-        entity_refs.push(&mut self.ball as &mut dyn Entity);
-        
         // Draw score
         self.score.draw();
 
+        // Collect all entities into a vector
+        let mut entity_refs: Vec<&mut dyn Entity> = Vec::new();
+        self.get_entity_refs(&mut entity_refs);
+        
         // Call the draw function for each entity
-        for entity_ref in entity_refs
-        {
+        for entity_ref in entity_refs {
             entity_ref.draw();
         }
     }
