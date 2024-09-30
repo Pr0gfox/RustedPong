@@ -747,6 +747,59 @@ impl Timer {
 }
 // --------------------- TIMER ---------------------
 
+// ===================== MENU =====================
+struct Menu {
+    is_active: bool,
+}
+
+impl Menu {
+    fn new() -> Self {
+        Menu{
+            is_active: true,
+        }
+    }
+
+    fn close(&mut self) -> () {
+        self.is_active = false;
+    }
+
+    fn draw(&self) -> () {
+        if !self.is_active {
+            return
+        }
+
+        // Draw background
+        draw_rectangle(0., 0., screen_width(), screen_height(), Color{r: 0., g: 0., b: 0., a:0.8});
+
+        // Draw title
+        Menu::draw_centered_text("RUSTED PONG", 110., 100.);
+        
+        // Draw controls
+        Menu::draw_centered_text("Keyboard controls:", screen_height() / 2. - 55., 45.);
+        Menu::draw_centered_text("P1: W & S   P2: UP & DOWN", screen_height() / 2. - 15., 25.);
+        Menu::draw_centered_text("Touch controls:", screen_height() / 2. + 55., 45.);
+        Menu::draw_centered_text("Upper and lower half of the screen on player's side", screen_height() / 2. + 95., 25.);
+        
+        // Draw continue prompt
+        Menu::draw_centered_text("Press any key or tap anywhere to continue...", screen_height() - 100., 25.);
+    }
+
+    fn draw_centered_text(text: &str, y: f32, font_size: f32) -> () {
+        // Get anchor point offset
+        let text_offset = -get_text_center(text, None, font_size as u16, 1., 0.);
+
+        // Draw
+        draw_text(
+            text,
+            screen_width() / 2. + text_offset.x,
+            y,
+            font_size,
+            WHITE
+        );
+    }
+}
+// --------------------- MENU ---------------------
+
 // ===================== GAME =====================
 struct MyGame {
     players: Vec<Player>,
@@ -755,6 +808,7 @@ struct MyGame {
     ball: Ball,
     score: Score,
     timer: Timer,
+    menu: Menu,
     last_screen_size: Vec2,
 }
 
@@ -776,11 +830,9 @@ impl MyGame {
             ball: Ball::new(),
             score: Score::new(),
             timer: Timer::new(),
+            menu: Menu::new(),
             last_screen_size: Vec2::from(screen_size()),
         };
-
-        // Start timer for first round
-        my_game.timer.start(TimerFunction::BallStart(Side::Left));
 
         // Return
         my_game
@@ -818,6 +870,13 @@ impl MyGame {
         // Ball was reset during resize, needs to be started again
         self.timer.start(TimerFunction::BallStart(Side::Left));
     }
+
+    fn close_menu(&mut self) -> () {
+        if self.menu.is_active {
+            self.menu.close();
+            self.timer.start(TimerFunction::BallStart(Side::Left));
+        }
+    }
 }
 
 trait EventHandler {
@@ -832,6 +891,11 @@ impl EventHandler for MyGame {
         if curr_screen_size != self.last_screen_size {
             self.resize();
             self.last_screen_size = curr_screen_size;
+        }
+
+        // Close menu upon input
+        if !get_keys_down().is_empty() || !touches().is_empty() {
+            self.close_menu();
         }
 
         // Update timer and get events
@@ -919,6 +983,9 @@ impl EventHandler for MyGame {
         for entity_ref in entity_refs {
             entity_ref.draw();
         }
+
+        // Draw menu if needed
+        self.menu.draw();
     }
 }
 // --------------------- GAME ---------------------
